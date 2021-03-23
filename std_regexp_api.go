@@ -6,8 +6,23 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"unicode/utf8"
 	"unsafe"
 )
+
+// Bitmap used by func special to check whether a character needs to be escaped.
+var specialBytes [16]byte
+
+// special reports whether byte b needs to be escaped by QuoteMeta.
+func special(b byte) bool {
+	return b < utf8.RuneSelf && specialBytes[b%16]&(1<<(b/16)) != 0
+}
+
+func init() {
+	for _, b := range []byte(`\.+*?()|[]{}^$`) {
+		specialBytes[b%16] |= 1 << (b / 16)
+	}
+}
 
 // CompileStd compile an regegular expression with standard API
 func CompileStd(expr string) (*RegexpStd, error) {
@@ -183,19 +198,8 @@ func (re *RegexpStd) ReplaceAllStringFunc(src string, repl func(string) string) 
 // with the replacement text repl. Inside repl, $ signs are interpreted as
 // in Expand, so for instance $1 represents the text of the first submatch.
 func (re *RegexpStd) ReplaceAll(src, repl []byte) []byte {
-	// n := 2
-	// if bytes.IndexByte(repl, '$') >= 0 {
-	// 	n = 2 * (re.numSubexp + 1)
-	// }
-	// srepl := ""
-	// b := re.replaceAll(src, "", n, func(dst []byte, match []int) []byte {
-	// 	if len(srepl) != len(repl) {
-	// 		srepl = string(repl)
-	// 	}
-	// 	return re.expand(dst, srepl, src, "", match)
-	// })
-	// return b
-	panic("")
+	r := re.ReplaceAllString(unsafeBytesString(src), unsafeBytesString(repl))
+	return []byte(r)
 }
 
 // ReplaceAllLiteral returns a copy of src, replacing matches of the StdRegexp
@@ -223,31 +227,30 @@ func (re *RegexpStd) ReplaceAllFunc(src []byte, repl func([]byte) []byte) []byte
 // inside the argument text; the returned string is a regular expression matching
 // the literal text.
 func QuoteMeta(s string) string {
-	// // A byte loop is correct because all metacharacters are ASCII.
-	// var i int
-	// for i = 0; i < len(s); i++ {
-	// 	if special(s[i]) {
-	// 		break
-	// 	}
-	// }
-	// // No meta characters found, so return original string.
-	// if i >= len(s) {
-	// 	return s
-	// }
+	// A byte loop is correct because all metacharacters are ASCII.
+	var i int
+	for i = 0; i < len(s); i++ {
+		if special(s[i]) {
+			break
+		}
+	}
+	// No meta characters found, so return original string.
+	if i >= len(s) {
+		return s
+	}
 
-	// b := make([]byte, 2*len(s)-i)
-	// copy(b, s[:i])
-	// j := i
-	// for ; i < len(s); i++ {
-	// 	if special(s[i]) {
-	// 		b[j] = '\\'
-	// 		j++
-	// 	}
-	// 	b[j] = s[i]
-	// 	j++
-	// }
-	// return string(b[:j])
-	panic("")
+	b := make([]byte, 2*len(s)-i)
+	copy(b, s[:i])
+	j := i
+	for ; i < len(s); i++ {
+		if special(s[i]) {
+			b[j] = '\\'
+			j++
+		}
+		b[j] = s[i]
+		j++
+	}
+	return string(b[:j])
 }
 
 // Find returns a slice holding the text of the leftmost match in b of the regular expression.
@@ -271,7 +274,6 @@ func (re *RegexpStd) FindIndex(b []byte) (loc []int) {
 		return []int{m.Capture.Index, m.Capture.Length}
 	}
 	return nil
-
 }
 
 // FindString returns a string holding the text of the leftmost match in s of the regular
@@ -327,19 +329,12 @@ func (re *RegexpStd) FindReaderIndex(r io.RuneReader) (loc []int) {
 // comment.
 // A return value of nil indicates no match.
 func (re *RegexpStd) FindSubmatch(b []byte) [][]byte {
-	// var dstCap [4]int
-	// a := re.doExecute(nil, b, "", 0, re.prog.NumCap, dstCap[:0])
-	// if a == nil {
-	// 	return nil
-	// }
-	// ret := make([][]byte, 1+re.numSubexp)
-	// for i := range ret {
-	// 	if 2*i < len(a) && a[2*i] >= 0 {
-	// 		ret[i] = b[a[2*i]:a[2*i+1]:a[2*i+1]]
-	// 	}
-	// }
-	// return ret
-	panic("")
+	indexes := re.FindSubmatchIndex(b)
+	result := make([][]byte, 0, len(indexes)/2)
+	for i := 0; i < len(indexes)/2; i++ {
+		result = append(result, b[indexes[i]:indexes[i+1]:indexes[i+1]])
+	}
+	return result
 }
 
 // Expand appends template to dst and returns the result; during the
@@ -452,7 +447,7 @@ func (re *RegexpStd) FindStringSubmatchIndex(s string) []int {
 // return value of nil indicates no match.
 func (re *RegexpStd) FindReaderSubmatchIndex(r io.RuneReader) []int {
 	//return re.pad(re.doExecute(r, nil, "", 0, re.prog.NumCap, nil))
-	panic("")
+	panic("unsupport FindReaderSubmatchIndex")
 }
 
 // FindAll is the 'All' version of Find; it returns a slice of all successive
@@ -460,18 +455,6 @@ func (re *RegexpStd) FindReaderSubmatchIndex(r io.RuneReader) []int {
 // package comment.
 // A return value of nil indicates no match.
 func (re *RegexpStd) FindAll(b []byte, n int) [][]byte {
-	// if n < 0 {
-	// 	n = len(b) + 1
-	// }
-	// var result [][]byte
-	// re.allMatches("", b, n, func(match []int) {
-	// 	if result == nil {
-	// 		result = make([][]byte, 0, startSize)
-	// 	}
-	// 	result = append(result, b[match[0]:match[1]:match[1]])
-	// })
-	// return result
-	panic("")
 	m, err := re.p.FindStringMatch(unsafeBytesString(b))
 	if err != nil {
 		println(err.Error())
