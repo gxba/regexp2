@@ -29,12 +29,12 @@ type RegexpStd struct {
 	p *Regexp
 }
 
-//RegexpStd return an compiled regegular expression with standard API
+// RegexpStd return an compiled regegular expression with standard API
 func (re *Regexp) RegexpStd() *RegexpStd {
 	return &RegexpStd{p: re}
 }
 
-//RegexpStd return an compiled regegular expression with regexp2 API
+// RegexpStd return an compiled regegular expression with regexp2 API
 func (re *RegexpStd) Regexp2() *Regexp {
 	return re.p
 }
@@ -102,7 +102,7 @@ func (re *RegexpStd) LiteralPrefix() (prefix string, complete bool) {
 // MatchReader reports whether the text returned by the RuneReader
 // contains any match of the regular expression re.
 func (re *RegexpStd) MatchReader(r io.RuneReader) bool {
-	panic("")
+	panic("unsupport MatchReader")
 }
 
 // MatchString reports whether the string s
@@ -158,10 +158,12 @@ func (re *RegexpStd) ReplaceAllString(src, repl string) string {
 // with the replacement string repl. The replacement repl is substituted directly,
 // without using Expand.
 func (re *RegexpStd) ReplaceAllLiteralString(src, repl string) string {
-	// return string(re.ReplaceAll(nil, src, 2, func(dst []byte, match []int) []byte {
-	// 	return append(dst, repl...)
-	// }))
-	panic("")
+	r, err := re.p.Replace(src, repl, 0, -1)
+	if err != nil {
+		println(err)
+		return src
+	}
+	return r
 }
 
 // ReplaceAllStringFunc returns a copy of src in which all matches of the
@@ -251,13 +253,8 @@ func QuoteMeta(s string) string {
 // Find returns a slice holding the text of the leftmost match in b of the regular expression.
 // A return value of nil indicates no match.
 func (re *RegexpStd) Find(b []byte) []byte {
-	// var dstCap [2]int
-	// a := re.doExecute(nil, b, "", 0, 2, dstCap[:0])
-	// if a == nil {
-	// 	return nil
-	// }
-	// return b[a[0]:a[1]:a[1]]
-	panic("")
+	s := re.FindString(unsafeBytesString(b))
+	return []byte(s)
 }
 
 // FindIndex returns a two-element slice of integers defining the location of
@@ -265,12 +262,16 @@ func (re *RegexpStd) Find(b []byte) []byte {
 // b[loc[0]:loc[1]].
 // A return value of nil indicates no match.
 func (re *RegexpStd) FindIndex(b []byte) (loc []int) {
-	// a := re.doExecute(nil, b, "", 0, 2, nil)
-	// if a == nil {
-	// 	return nil
-	// }
-	// return a[0:2]
-	panic("")
+	m, err := re.p.FindStringMatch(unsafeBytesString(b))
+	if err != nil {
+		println(err)
+		return nil
+	}
+	if m != nil {
+		return []int{m.Capture.Index, m.Capture.Length}
+	}
+	return nil
+
 }
 
 // FindString returns a string holding the text of the leftmost match in s of the regular
@@ -279,13 +280,15 @@ func (re *RegexpStd) FindIndex(b []byte) (loc []int) {
 // an empty string. Use FindStringIndex or FindStringSubmatch if it is
 // necessary to distinguish these cases.
 func (re *RegexpStd) FindString(s string) string {
-	// var dstCap [2]int
-	// a := re.doExecute(nil, nil, s, 0, 2, dstCap[:0])
-	// if a == nil {
-	// 	return ""
-	// }
-	// return s[a[0]:a[1]]
-	panic("")
+	m, err := re.p.FindStringMatch(s)
+	if err != nil {
+		println(err)
+		return ""
+	}
+	if m != nil {
+		return m.Capture.String()
+	}
+	return ""
 }
 
 // FindStringIndex returns a two-element slice of integers defining the
@@ -293,12 +296,15 @@ func (re *RegexpStd) FindString(s string) string {
 // itself is at s[loc[0]:loc[1]].
 // A return value of nil indicates no match.
 func (re *RegexpStd) FindStringIndex(s string) (loc []int) {
-	// a := re.doExecute(nil, nil, s, 0, 2, nil)
-	// if a == nil {
-	// 	return nil
-	// }
-	// return a[0:2]
-	panic("")
+	m, err := re.p.FindStringMatch(s)
+	if err != nil {
+		println(err)
+		return nil
+	}
+	if m != nil {
+		return []int{m.Capture.Index, m.Capture.Length}
+	}
+	return nil
 }
 
 // FindReaderIndex returns a two-element slice of integers defining the
@@ -312,7 +318,7 @@ func (re *RegexpStd) FindReaderIndex(r io.RuneReader) (loc []int) {
 	// 	return nil
 	// }
 	// return a[0:2]
-	panic("")
+	panic("unsupport FindReaderIndex")
 }
 
 // FindSubmatch returns a slice of slices holding the text of the leftmost
@@ -372,8 +378,22 @@ func (re *RegexpStd) ExpandString(dst []byte, template string, src string, match
 // in the package comment.
 // A return value of nil indicates no match.
 func (re *RegexpStd) FindSubmatchIndex(b []byte) []int {
-	//return re.pad(re.doExecute(nil, b, "", 0, re.prog.NumCap, nil))
-	panic("")
+	m, err := re.p.FindStringMatch(unsafeBytesString(b))
+	if err != nil {
+		println(err.Error())
+		return nil
+	}
+
+	if m != nil {
+		m.populateOtherGroups()
+		subs := make([]int, 0, len(m.otherGroups)+1)
+		subs = append(subs, m.Group.Index)
+		for i := 0; i < len(m.otherGroups); i++ {
+			subs = append(subs, (&m.otherGroups[i]).Index)
+		}
+		return subs
+	}
+	return nil
 }
 
 // FindStringSubmatch returns a slice of strings holding the text of the
@@ -382,19 +402,22 @@ func (re *RegexpStd) FindSubmatchIndex(b []byte) []int {
 // package comment.
 // A return value of nil indicates no match.
 func (re *RegexpStd) FindStringSubmatch(s string) []string {
-	// var dstCap [4]int
-	// a := re.doExecute(nil, nil, s, 0, re.prog.NumCap, dstCap[:0])
-	// if a == nil {
-	// 	return nil
-	// }
-	// ret := make([]string, 1+re.numSubexp)
-	// for i := range ret {
-	// 	if 2*i < len(a) && a[2*i] >= 0 {
-	// 		ret[i] = s[a[2*i]:a[2*i+1]]
-	// 	}
-	// }
-	// return ret
-	panic("")
+	m, err := re.p.FindStringMatch(s)
+	if err != nil {
+		println(err.Error())
+		return nil
+	}
+
+	if m != nil {
+		m.populateOtherGroups()
+		subs := make([]string, 0, len(m.otherGroups)+1)
+		subs = append(subs, m.Group.String())
+		for i := 0; i < len(m.otherGroups); i++ {
+			subs = append(subs, (&m.otherGroups[i]).String())
+		}
+		return subs
+	}
+	return nil
 }
 
 // FindStringSubmatchIndex returns a slice holding the index pairs
@@ -403,8 +426,23 @@ func (re *RegexpStd) FindStringSubmatch(s string) []string {
 // 'Index' descriptions in the package comment.
 // A return value of nil indicates no match.
 func (re *RegexpStd) FindStringSubmatchIndex(s string) []int {
-	//return re.pad(re.doExecute(nil, nil, s, 0, re.prog.NumCap, nil))
-	panic("")
+	m, err := re.p.FindStringMatch(s)
+	if err != nil {
+		println(err.Error())
+		return nil
+	}
+
+	if m != nil {
+		m.populateOtherGroups()
+		subs := make([]int, 0, 2*(len(m.otherGroups)+1))
+		subs = append(subs, m.Group.Index, m.Group.Length)
+		for i := 0; i < len(m.otherGroups); i++ {
+			g := &m.otherGroups[i]
+			subs = append(subs, g.Index, g.Length)
+		}
+		return subs
+	}
+	return nil
 }
 
 // FindReaderSubmatchIndex returns a slice holding the index pairs
@@ -434,6 +472,24 @@ func (re *RegexpStd) FindAll(b []byte, n int) [][]byte {
 	// })
 	// return result
 	panic("")
+	m, err := re.p.FindStringMatch(unsafeBytesString(b))
+	if err != nil {
+		println(err.Error())
+		return nil
+	}
+
+	var result [][]byte
+	for m != nil {
+		result = append(result, b[m.Group.Index:m.Group.Length:m.Group.Length])
+
+		m, err = re.p.FindNextMatch(m)
+		if err != nil {
+			println(err.Error())
+			return nil
+		}
+	}
+
+	return result
 }
 
 // FindAllIndex is the 'All' version of FindIndex; it returns a slice of all
@@ -441,18 +497,7 @@ func (re *RegexpStd) FindAll(b []byte, n int) [][]byte {
 // in the package comment.
 // A return value of nil indicates no match.
 func (re *RegexpStd) FindAllIndex(b []byte, n int) [][]int {
-	// if n < 0 {
-	// 	n = len(b) + 1
-	// }
-	// var result [][]int
-	// re.allMatches("", b, n, func(match []int) {
-	// 	if result == nil {
-	// 		result = make([][]int, 0, startSize)
-	// 	}
-	// 	result = append(result, match[0:2])
-	// })
-	// return result
-	panic("")
+	return re.FindAllStringIndex(unsafeBytesString(b), n)
 }
 
 // FindAllString is the 'All' version of FindString; it returns a slice of all
@@ -460,18 +505,24 @@ func (re *RegexpStd) FindAllIndex(b []byte, n int) [][]int {
 // in the package comment.
 // A return value of nil indicates no match.
 func (re *RegexpStd) FindAllString(s string, n int) []string {
-	// if n < 0 {
-	// 	n = len(s) + 1
-	// }
-	// var result []string
-	// re.allMatches(s, nil, n, func(match []int) {
-	// 	if result == nil {
-	// 		result = make([]string, 0, startSize)
-	// 	}
-	// 	result = append(result, s[match[0]:match[1]])
-	// })
-	// return result
-	panic("")
+	m, err := re.p.FindStringMatch(s)
+	if err != nil {
+		println(err.Error())
+		return nil
+	}
+
+	var result []string
+	for m != nil {
+		result = append(result, m.Group.String())
+
+		m, err = re.p.FindNextMatch(m)
+		if err != nil {
+			println(err.Error())
+			return nil
+		}
+	}
+
+	return result
 }
 
 // FindAllStringIndex is the 'All' version of FindStringIndex; it returns a
@@ -479,18 +530,24 @@ func (re *RegexpStd) FindAllString(s string, n int) []string {
 // description in the package comment.
 // A return value of nil indicates no match.
 func (re *RegexpStd) FindAllStringIndex(s string, n int) [][]int {
-	// if n < 0 {
-	// 	n = len(s) + 1
-	// }
-	// var result [][]int
-	// re.allMatches(s, nil, n, func(match []int) {
-	// 	if result == nil {
-	// 		result = make([][]int, 0, startSize)
-	// 	}
-	// 	result = append(result, match[0:2])
-	// })
-	// return result
-	panic("")
+	m, err := re.p.FindStringMatch(s)
+	if err != nil {
+		println(err.Error())
+		return nil
+	}
+
+	var result [][]int
+	for m != nil {
+		result = append(result, []int{m.Group.Index, m.Group.Length})
+
+		m, err = re.p.FindNextMatch(m)
+		if err != nil {
+			println(err.Error())
+			return nil
+		}
+	}
+
+	return result
 }
 
 // FindAllSubmatch is the 'All' version of FindSubmatch; it returns a slice
@@ -511,7 +568,6 @@ func (re *RegexpStd) FindAllSubmatch(b []byte, n int) [][][]byte {
 			match = append(match, sub)
 		}
 		result = append(result, match)
-
 	}
 
 	return result
@@ -547,7 +603,7 @@ func (re *RegexpStd) FindAllStringSubmatch(s string, n int) [][]string {
 		}
 		result = append(result, subs)
 
-		m, err = re.p.FindStringMatch(s)
+		m, err = re.p.FindNextMatch(m)
 		if err != nil {
 			println(err.Error())
 			return nil
@@ -579,7 +635,7 @@ func (re *RegexpStd) FindAllStringSubmatchIndex(s string, n int) [][]int {
 		}
 		result = append(result, subs)
 
-		m, err = re.p.FindStringMatch(s)
+		m, err = re.p.FindNextMatch(m)
 		if err != nil {
 			println(err.Error())
 			return nil

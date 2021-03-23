@@ -10,7 +10,7 @@ func TestStdRegexp(t *testing.T) {
 	pattern := `(?sm:^[ \t]*(?<IDENT>var|const)[ \t]+(?<NAME>[a-zA-Z_][[:word:]]+)[ \t]*=[ \t]*(?<VALUE>[1-9]\d*)[ \t]*$)`
 	toMatch := []string{
 		`const fooBar123_ = 10`,
-		`var fooBar456_ = 09`,
+		`var fooBar456 = 09`,
 	}
 	exp := MustCompileStd(pattern)
 
