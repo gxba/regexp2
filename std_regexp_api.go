@@ -1,17 +1,21 @@
-// adapt apis to std.regexp
+// adapt APIs to standard regexp
 
 package regexp2
 
 import (
 	"fmt"
 	"io"
+	"reflect"
+	"unsafe"
 )
 
+// CompileStd compile an regegular expression with standard API
 func CompileStd(expr string) (*RegexpStd, error) {
 	re, err := Compile(expr, RE2)
-	return re.StdRegexp(), err
+	return re.RegexpStd(), err
 }
 
+// CompileStd compile an regegular expression with standard API, it panic if expr is valid
 func MustCompileStd(expr string) *RegexpStd {
 	re, err := CompileStd(expr)
 	if err != nil {
@@ -20,27 +24,24 @@ func MustCompileStd(expr string) *RegexpStd {
 	return re
 }
 
+// RegexpStd is compiled regegular expression with standard regexp APIs export
 type RegexpStd struct {
 	p *Regexp
 }
 
-func (re *Regexp) StdRegexp() *RegexpStd {
+//RegexpStd return an compiled regegular expression with standard API
+func (re *Regexp) RegexpStd() *RegexpStd {
 	return &RegexpStd{p: re}
 }
 
-func makeRepFunc(f func(string) string) MatchEvaluator {
-	return func(m Match) string {
-		return f(m.String())
-	}
-}
-
+//RegexpStd return an compiled regegular expression with regexp2 API
 func (re *RegexpStd) Regexp2() *Regexp {
 	return re.p
 }
 
 // String returns the source text used to compile the regular expression.
 func (re *RegexpStd) String() string {
-	return ""
+	return re.p.String()
 }
 
 // Copy returns a new StdRegexp object copied from re.
@@ -52,8 +53,8 @@ func (re *RegexpStd) String() string {
 // Copy may still be appropriate if the reason for its use is to make
 // two copies with different Longest settings.
 func (re *RegexpStd) Copy() *RegexpStd {
-	re2 := *re
-	return &re2
+	re2 := *re.p
+	return &RegexpStd{p: &re2}
 }
 
 // Longest makes future searches prefer the leftmost-longest match.
@@ -63,6 +64,8 @@ func (re *RegexpStd) Copy() *RegexpStd {
 // This method modifies the StdRegexp and may not be called concurrently
 // with any other methods.
 func (re *RegexpStd) Longest() {
+	//TODO:
+	panic("Longest unsupport")
 }
 
 // SubexpNames returns the names of the parenthesized subexpressions
@@ -82,14 +85,18 @@ func (re *RegexpStd) SubexpNames() []string {
 // In this case, SubexpIndex returns the index of the leftmost such subexpression
 // in the regular expression.
 func (re *RegexpStd) SubexpIndex(name string) int {
-	return 0
+	return re.p.GroupNumberFromName(name)
 }
 
 // LiteralPrefix returns a literal string that must begin any match
 // of the regular expression re. It returns the boolean true if the
 // literal string comprises the entire regular expression.
 func (re *RegexpStd) LiteralPrefix() (prefix string, complete bool) {
-	panic("")
+	if p := re.p.code.FcPrefix; p != nil {
+		return string(p.PrefixStr), p.CaseInsensitive
+	} else {
+		return "", false
+	}
 }
 
 // MatchReader reports whether the text returned by the RuneReader
@@ -110,7 +117,7 @@ func (re *RegexpStd) MatchString(s string) bool {
 // Match reports whether the byte slice b
 // contains any match of the regular expression re.
 func (re *RegexpStd) Match(b []byte) bool {
-	panic("")
+	return re.MatchString(unsafeBytesString(b))
 }
 
 // MatchString reports whether the string s
@@ -491,24 +498,23 @@ func (re *RegexpStd) FindAllStringIndex(s string, n int) [][]int {
 // description in the package comment.
 // A return value of nil indicates no match.
 func (re *RegexpStd) FindAllSubmatch(b []byte, n int) [][][]byte {
-	// if n < 0 {
-	// 	n = len(b) + 1
-	// }
-	// var result [][][]byte
-	// re.allMatches("", b, n, func(match []int) {
-	// 	if result == nil {
-	// 		result = make([][][]byte, 0, startSize)
-	// 	}
-	// 	slice := make([][]byte, len(match)/2)
-	// 	for j := range slice {
-	// 		if match[2*j] >= 0 {
-	// 			slice[j] = b[match[2*j]:match[2*j+1]:match[2*j+1]]
-	// 		}
-	// 	}
-	// 	result = append(result, slice)
-	// })
-	// return result
-	panic("")
+	if n < 0 {
+		n = len(b) + 1
+	}
+	matches := re.FindAllSubmatchIndex(b, n)
+	var result = make([][][]byte, 0, len(matches))
+	for _, m := range matches {
+		matchSize := len(m) / 2
+		match := make([][]byte, 0, matchSize)
+		for j := 0; j < matchSize; j++ {
+			sub := b[m[2*j]:m[2*j+1]:m[2*j+1]]
+			match = append(match, sub)
+		}
+		result = append(result, match)
+
+	}
+
+	return result
 }
 
 // FindAllSubmatchIndex is the 'All' version of FindSubmatchIndex; it returns
@@ -516,18 +522,8 @@ func (re *RegexpStd) FindAllSubmatch(b []byte, n int) [][][]byte {
 // 'All' description in the package comment.
 // A return value of nil indicates no match.
 func (re *RegexpStd) FindAllSubmatchIndex(b []byte, n int) [][]int {
-	// if n < 0 {
-	// 	n = len(b) + 1
-	// }
-	// var result [][]int
-	// re.allMatches("", b, n, func(match []int) {
-	// 	if result == nil {
-	// 		result = make([][]int, 0, startSize)
-	// 	}
-	// 	result = append(result, match)
-	// })
-	// return result
-	panic("")
+	s := unsafeBytesString(b)
+	return re.FindAllStringSubmatchIndex(s, n)
 }
 
 // FindAllStringSubmatch is the 'All' version of FindStringSubmatch; it
@@ -541,14 +537,24 @@ func (re *RegexpStd) FindAllStringSubmatch(s string, n int) [][]string {
 		return nil
 	}
 
-	m.populateOtherGroups()
-	subs := make([]string, 0, len(m.otherGroups)+1)
-	subs = append(subs, m.Group.String())
-	for i := 0; i < len(m.otherGroups); i++ {
-		subs = append(subs, (&m.otherGroups[i]).String())
+	var result [][]string
+	for m != nil {
+		m.populateOtherGroups()
+		subs := make([]string, 0, len(m.otherGroups)+1)
+		subs = append(subs, m.Group.String())
+		for i := 0; i < len(m.otherGroups); i++ {
+			subs = append(subs, (&m.otherGroups[i]).String())
+		}
+		result = append(result, subs)
+
+		m, err = re.p.FindStringMatch(s)
+		if err != nil {
+			println(err.Error())
+			return nil
+		}
 	}
 
-	return [][]string{subs}
+	return result
 }
 
 // FindAllStringSubmatchIndex is the 'All' version of
@@ -557,18 +563,30 @@ func (re *RegexpStd) FindAllStringSubmatch(s string, n int) [][]string {
 // comment.
 // A return value of nil indicates no match.
 func (re *RegexpStd) FindAllStringSubmatchIndex(s string, n int) [][]int {
-	// if n < 0 {
-	// 	n = len(s) + 1
-	// }
-	// var result [][]int
-	// re.allMatches(s, nil, n, func(match []int) {
-	// 	if result == nil {
-	// 		result = make([][]int, 0, startSize)
-	// 	}
-	// 	result = append(result, match)
-	// })
-	// return result
-	panic("")
+	m, err := re.p.FindStringMatch(s)
+	if err != nil {
+		println(err.Error())
+		return nil
+	}
+
+	var result [][]int
+	for m != nil {
+		m.populateOtherGroups()
+		subs := make([]int, 0, len(m.otherGroups)+1)
+		subs = append(subs, m.Group.Index)
+		for i := 0; i < len(m.otherGroups); i++ {
+			subs = append(subs, (&m.otherGroups[i]).Index)
+		}
+		result = append(result, subs)
+
+		m, err = re.p.FindStringMatch(s)
+		if err != nil {
+			println(err.Error())
+			return nil
+		}
+	}
+
+	return result
 }
 
 // Split slices s into substrings separated by the expression and returns a slice of
@@ -587,36 +605,54 @@ func (re *RegexpStd) FindAllStringSubmatchIndex(s string, n int) [][]int {
 //   n == 0: the result is nil (zero substrings)
 //   n < 0: all substrings
 func (re *RegexpStd) Split(s string, n int) []string {
+	if n == 0 {
+		return nil
+	}
 
-	// if n == 0 {
-	// 	return nil
-	// }
+	if len(re.p.pattern) > 0 && len(s) == 0 {
+		return []string{""}
+	}
 
-	// if len(re.expr) > 0 && len(s) == 0 {
-	// 	return []string{""}
-	// }
+	matches := re.FindAllStringIndex(s, n)
+	strings := make([]string, 0, len(matches))
 
-	// matches := re.FindAllStringIndex(s, n)
-	// strings := make([]string, 0, len(matches))
+	beg := 0
+	end := 0
+	for _, match := range matches {
+		if n > 0 && len(strings) >= n-1 {
+			break
+		}
 
-	// beg := 0
-	// end := 0
-	// for _, match := range matches {
-	// 	if n > 0 && len(strings) >= n-1 {
-	// 		break
-	// 	}
+		end = match[0]
+		if match[1] != 0 {
+			strings = append(strings, s[beg:end])
+		}
+		beg = match[1]
+	}
 
-	// 	end = match[0]
-	// 	if match[1] != 0 {
-	// 		strings = append(strings, s[beg:end])
-	// 	}
-	// 	beg = match[1]
-	// }
+	if end != len(s) {
+		strings = append(strings, s[beg:])
+	}
 
-	// if end != len(s) {
-	// 	strings = append(strings, s[beg:])
-	// }
+	return strings
+}
 
-	// return strings
-	panic("")
+// makeRepFunc convert a standard replace function to regexp2 replace function
+func makeRepFunc(f func(string) string) MatchEvaluator {
+	return func(m Match) string {
+		return f(m.String())
+	}
+}
+
+// unsafeStringBytes return GoString's buffer slice(enable modify string)
+func unsafeStringBytes(s string) []byte {
+	var bh reflect.SliceHeader
+	sh := (*reflect.StringHeader)(unsafe.Pointer(&s))
+	bh.Data, bh.Len, bh.Cap = sh.Data, sh.Len, sh.Len
+	return *(*[]byte)(unsafe.Pointer(&bh))
+}
+
+// unsafeBytesString convert b to string without copy
+func unsafeBytesString(b []byte) string {
+	return *(*string)(unsafe.Pointer(&b))
 }
