@@ -206,10 +206,12 @@ func (re *RegexpStd) ReplaceAll(src, repl []byte) []byte {
 // with the replacement bytes repl. The replacement repl is substituted directly,
 // without using Expand.
 func (re *RegexpStd) ReplaceAllLiteral(src, repl []byte) []byte {
-	// return re.replaceAll(src, "", 2, func(dst []byte, match []int) []byte {
-	// 	return append(dst, repl...)
-	// })
-	panic("")
+	rep, err := re.p.Replace(unsafeBytesString(src), QuoteMeta(unsafeBytesString(repl)), 0, -1)
+	if err != nil {
+		println(err.Error())
+		return src
+	}
+	return unsafeStringBytes(rep)
 }
 
 // ReplaceAllFunc returns a copy of src in which all matches of the
@@ -217,10 +219,12 @@ func (re *RegexpStd) ReplaceAllLiteral(src, repl []byte) []byte {
 // to the matched byte slice. The replacement returned by repl is substituted
 // directly, without using Expand.
 func (re *RegexpStd) ReplaceAllFunc(src []byte, repl func([]byte) []byte) []byte {
-	// return re.replaceAll(src, "", 2, func(dst []byte, match []int) []byte {
-	// 	return append(dst, repl(src[match[0]:match[1]])...)
-	// })
-	panic("")
+	rep, err := re.p.ReplaceFunc(unsafeBytesString(src), makeRepByteFunc(repl), 0, -1)
+	if err != nil {
+		println(err.Error())
+		return src
+	}
+	return unsafeStringBytes(rep)
 }
 
 // QuoteMeta returns a string that escapes all regular expression metacharacters
@@ -680,6 +684,12 @@ func (re *RegexpStd) Split(s string, n int) []string {
 func makeRepFunc(f func(string) string) MatchEvaluator {
 	return func(m Match) string {
 		return f(m.String())
+	}
+}
+
+func makeRepByteFunc(f func([]byte) []byte) MatchEvaluator {
+	return func(m Match) string {
+		return unsafeBytesString(f(unsafeStringBytes(m.String())))
 	}
 }
 
